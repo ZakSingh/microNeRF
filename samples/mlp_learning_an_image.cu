@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020-2021, NVIDIA CORPORATION.  All rights reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
  *     * Redistributions of source code must retain the above copyright notice, this list of
@@ -11,7 +11,7 @@
  *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
  *       to endorse or promote products derived from this software without specific prior written
  *       permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
  * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
@@ -20,13 +20,14 @@
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
  * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *//*
+ */
+/*
  */
 
 /** @file   mlp-learning-an-image.cu
  *  @author Thomas Müller, NVIDIA
  *  @brief  Sample application that uses the tiny cuda nn framework to learn a
-            2D function that represents an image.
+						2D function that represents an image.
  */
 
 #include <tiny-cuda-nn/misc_kernels.h>
@@ -45,14 +46,12 @@
 #include <thread>
 #include <vector>
 
-
 using namespace tcnn;
 using precision_t = network_precision_t;
 
-
-
-GPUMemory<float> load_image(const std::string& filename, int& width, int& height) {
-	float* out; // width * height * RGBA
+GPUMemory<float> load_image(const std::string &filename, int &width, int &height)
+{
+	float *out; // width * height * RGBA
 	load_exr(&out, &width, &height, filename.c_str());
 
 	GPUMemory<float> result(width * height * 4);
@@ -63,12 +62,14 @@ GPUMemory<float> load_image(const std::string& filename, int& width, int& height
 }
 
 template <typename T>
-void save_image(const T* image, int width, int height, int n_channels, int channel_stride, const std::string& filename) {
+void save_image(const T *image, int width, int height, int n_channels, int channel_stride, const std::string &filename)
+{
 	std::vector<T> host_data(width * height * n_channels);
-	CUDA_CHECK_THROW(cudaMemcpy(host_data.data(), image, host_data.size()*sizeof(T), cudaMemcpyDeviceToHost));
+	CUDA_CHECK_THROW(cudaMemcpy(host_data.data(), image, host_data.size() * sizeof(T), cudaMemcpyDeviceToHost));
 
 	std::vector<float> float_host_data(host_data.size());
-	for (size_t i = 0; i < host_data.size(); ++i) {
+	for (size_t i = 0; i < host_data.size(); ++i)
+	{
 		float_host_data[i] = (float)host_data[i];
 	}
 
@@ -76,25 +77,30 @@ void save_image(const T* image, int width, int height, int n_channels, int chann
 }
 
 template <uint32_t stride>
-__global__ void eval_image(uint32_t n_elements, cudaTextureObject_t texture, float* __restrict__ xs_and_ys, float* __restrict__ result) {
+__global__ void eval_image(uint32_t n_elements, cudaTextureObject_t texture, float *__restrict__ xs_and_ys, float *__restrict__ result)
+{
 	uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
-	if (i >= n_elements) return;
+	if (i >= n_elements)
+		return;
 
 	uint32_t output_idx = i * stride;
 	uint32_t input_idx = i * 2;
 
-	float4 val = tex2D<float4>(texture, xs_and_ys[input_idx], xs_and_ys[input_idx+1]);
+	float4 val = tex2D<float4>(texture, xs_and_ys[input_idx], xs_and_ys[input_idx + 1]);
 	result[output_idx + 0] = val.x;
 	result[output_idx + 1] = val.y;
 	result[output_idx + 2] = val.z;
 
-	for (uint32_t i = 3; i < stride; ++i) {
+	for (uint32_t i = 3; i < stride; ++i)
+	{
 		result[output_idx + i] = 1;
 	}
 }
 
-int main(int argc, char* argv[]) {
-	if (!(__CUDACC_VER_MAJOR__ > 10 || (__CUDACC_VER_MAJOR__ == 10 && __CUDACC_VER_MINOR__ >= 2))) {
+int main(int argc, char *argv[])
+{
+	if (!(__CUDACC_VER_MAJOR__ > 10 || (__CUDACC_VER_MAJOR__ == 10 && __CUDACC_VER_MINOR__ >= 2)))
+	{
 		std::cout << "Turing Tensor Core operations must be compiled with CUDA 10.2 Toolkit or later." << std::endl;
 		return -1;
 	}
@@ -102,58 +108,62 @@ int main(int argc, char* argv[]) {
 	cudaDeviceProp props;
 
 	cudaError_t error = cudaGetDeviceProperties(&props, 0);
-	if (error != cudaSuccess) {
+	if (error != cudaSuccess)
+	{
 		std::cout << "cudaGetDeviceProperties() returned an error: " << cudaGetErrorString(error) << std::endl;
 		return -1;
 	}
 
-	if (!((props.major * 10 + props.minor) >= 75)) {
+	if (!((props.major * 10 + props.minor) >= 75))
+	{
 		std::cout << "Turing Tensor Core operations must be run on a machine with compute capability at least 75."
-					<< std::endl;
+							<< std::endl;
 		return -1;
 	}
 
-	if (argc < 2) {
-		std::cout << "USAGE: " << argv[0] << " " << "path-to-image.exr [path-to-optional-config.json]" << std::endl;
+	if (argc < 2)
+	{
+		std::cout << "USAGE: " << argv[0] << " "
+							<< "path-to-image.exr [path-to-optional-config.json]" << std::endl;
 		std::cout << "Sample EXR files are provided in 'data/images'." << std::endl;
 		return 0;
 	}
 
-	try {
+	try
+	{
 		json config = {
-			{"loss", {
-				{"otype", "RelativeL2"}
-			}},
-			{"optimizer", {
-				{"otype", "Adam"},
-				// {"otype", "Shampoo"},
-				{"learning_rate", 1e-2},
-				{"beta1", 0.9f},
-				{"beta2", 0.99f},
-				{"l2_reg", 0.0f},
-				// The following parameters are only used when the optimizer is "Shampoo".
-				{"beta3", 0.9f},
-				{"beta_shampoo", 0.0f},
-				{"identity", 0.0001f},
-				{"cg_on_momentum", false},
-				{"frobenius_normalization", true},
-			}},
-			{"encoding", {
-				{"otype", "OneBlob"},
-				{"n_bins", 32},
-			}},
-			{"network", {
-				{"otype", "FullyFusedMLP"},
-				// {"otype", "CutlassMLP"},
-				// {"otype", "CutlassResNet"},
-				{"n_neurons", 64},
-				{"n_layers", 4},
-				{"activation", "ReLU"},
-				{"output_activation", "None"},
-			}},
+				{"loss", {{"otype", "RelativeL2"}}},
+				{"optimizer", {
+													{"otype", "Adam"},
+													// {"otype", "Shampoo"},
+													{"learning_rate", 1e-2},
+													{"beta1", 0.9f},
+													{"beta2", 0.99f},
+													{"l2_reg", 0.0f},
+													// The following parameters are only used when the optimizer is "Shampoo".
+													{"beta3", 0.9f},
+													{"beta_shampoo", 0.0f},
+													{"identity", 0.0001f},
+													{"cg_on_momentum", false},
+													{"frobenius_normalization", true},
+											}},
+				{"encoding", {
+												 {"otype", "OneBlob"},
+												 {"n_bins", 32},
+										 }},
+				{"network", {
+												{"otype", "FullyFusedMLP"},
+												// {"otype", "CutlassMLP"},
+												// {"otype", "CutlassResNet"},
+												{"n_neurons", 16},
+												{"n_layers", 8},
+												{"activation", "ReLU"},
+												{"output_activation", "None"},
+										}},
 		};
 
-		if (argc >= 3) {
+		if (argc >= 3)
+		{
 			std::cout << "Loading custom json config '" << argv[2] << "'." << std::endl;
 			std::ifstream f{argv[2]};
 			config = json::parse(f, nullptr, true, /*skip_comments=*/true);
@@ -207,11 +217,13 @@ int main(int argc, char* argv[]) {
 		GPUMemory<float> xs_and_ys(n_coords_padded * 2);
 
 		std::vector<float> host_xs_and_ys(n_coords * 2);
-		for (int y = 0; y < sampling_height; ++y) {
-			for (int x = 0; x < sampling_width; ++x) {
+		for (int y = 0; y < sampling_height; ++y)
+		{
+			for (int x = 0; x < sampling_width; ++x)
+			{
 				int idx = (y * sampling_width + x) * 2;
-				host_xs_and_ys[idx+0] = (float)(x + 0.5) / (float)sampling_width;
-				host_xs_and_ys[idx+1] = (float)(y + 0.5) / (float)sampling_height;
+				host_xs_and_ys[idx + 0] = (float)(x + 0.5) / (float)sampling_width;
+				host_xs_and_ys[idx + 1] = (float)(y + 0.5) / (float)sampling_height;
 			}
 		}
 
@@ -226,7 +238,7 @@ int main(int argc, char* argv[]) {
 		// Various constants for the network and optimization
 		const uint32_t batch_size = 1 << 16;
 		const uint32_t n_training_steps = argc >= 4 ? atoi(argv[3]) : 10000000;
-		const uint32_t n_input_dims = 2; // 2-D image coordinate
+		const uint32_t n_input_dims = 2;	// 2-D image coordinate
 		const uint32_t n_output_dims = 3; // RGB color
 
 		cudaStream_t inference_stream;
@@ -261,7 +273,8 @@ int main(int argc, char* argv[]) {
 
 		std::cout << "Beginning optimization with " << n_training_steps << " training steps." << std::endl;
 
-		for (uint32_t i = 0; i < n_training_steps; ++i) {
+		for (uint32_t i = 0; i < n_training_steps; ++i)
+		{
 			bool print_loss = i % 1000 == 0;
 			bool visualize_learned_func = argc < 5 && i % 1000 == 0;
 
@@ -281,36 +294,42 @@ int main(int argc, char* argv[]) {
 
 			// Debug outputs
 			{
-				if (print_loss) {
+				if (print_loss)
+				{
 					std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
-					std::cout << "Step#" << i << ": " << "loss=" << tmp_loss/(float)tmp_loss_counter << " time=" << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() << "[µs]" << std::endl;
+					std::cout << "Step#" << i << ": "
+										<< "loss=" << tmp_loss / (float)tmp_loss_counter << " time=" << std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count() << "[µs]" << std::endl;
 
 					tmp_loss = 0;
 					tmp_loss_counter = 0;
 				}
 
-				if (visualize_learned_func) {
+				if (visualize_learned_func)
+				{
 					network->inference(inference_stream, inference_batch, prediction);
 					save_image(prediction.data(), sampling_width, sampling_height, 3, n_output_dims, std::to_string(i) + ".exr");
 				}
 
 				// Don't count visualizing as part of timing
 				// (assumes visualize_learned_pdf is only true when print_loss is true)
-				if (print_loss) {
+				if (print_loss)
+				{
 					begin = std::chrono::steady_clock::now();
 				}
 			}
 		}
 
 		// Dump final image if a name was specified
-		if (argc >= 5) {
+		if (argc >= 5)
+		{
 			network->inference(inference_stream, inference_batch, prediction);
 			save_image(prediction.data(), sampling_width, sampling_height, 3, n_output_dims, argv[4]);
 		}
-	} catch (std::exception& e) {
+	}
+	catch (std::exception &e)
+	{
 		std::cout << "Uncaught exception: " << e.what() << std::endl;
 	}
 
 	return EXIT_SUCCESS;
 }
-

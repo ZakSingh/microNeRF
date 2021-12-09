@@ -124,6 +124,7 @@ add_subdirectory("src")
 
 if (TCNN_BUILD_EXAMPLES)
 	add_subdirectory("samples")
+	add_subdirectory("tinynerf")
 endif()
 if (TCNN_BUILD_BENCHMARK)
 	add_subdirectory("benchmarks/image")
