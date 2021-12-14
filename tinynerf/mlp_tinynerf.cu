@@ -44,6 +44,8 @@
 #include <vector>
 
 #include "data.h"
+#include "utils.h"
+#include <xtensor/xio.hpp>
 
 using namespace tcnn;
 using precision_t = network_precision_t;
@@ -63,15 +65,46 @@ std::vector<float> load_weights(const std::string &filename)
 	return weightsBuffer;
 }
 
+void train()
+{
+	std::string datasetPath = "../tinynerfdata/lego";
+	int imageWidth = 800;
+	int imageHeight = 800;
+	float near = 2.0;
+	float far = 6.0;
+
+	int n_C = 32;
+	int n_F = 64;
+
+	json jsonTrainData = read_json("../tinynerfdata/lego/transforms_train.json");
+	json jsonValData = read_json("../tinynerfdata/lego/transforms_val.json");
+	json jsonTestData = read_json("../tinynerfdata/lego/transforms_test.json");
+
+	float focalLength = get_focal_from_fov(jsonTrainData["camera_angle_x"], imageWidth);
+	std::cout << "focalLength: " << focalLength << std::endl;
+
+	auto [trainImagePaths, trainC2Ws] = get_image_c2w(jsonTrainData, datasetPath);
+
+	// Load the image dataset into memory
+	auto getImages = GetImages();
+	vector<vector<vector<vector<float>>>> images;
+	// for (auto it : trainImagePaths)
+	// 	// TODO: this should ideally be parallelized
+	// 	images.push_back(getImages.load_image(it));
+
+	// Compute rays
+	auto getRays = GetRays(focalLength, imageWidth, imageHeight, near, far, n_C);
+	vector<std::tuple<vector<float>, vector<float>, vector<float>>> rays;
+	for (auto c2w : trainC2Ws)
+	{
+		rays.push_back(getRays.computeRays(c2w));
+		return;
+	}
+}
+
 int main(int argc, char *argv[])
 {
-	json jsonData = read_json("../tinynerfdata/lego/transforms_train.json");
-	std::string datasetPath = "../tinynerfdata/lego";
-	auto dataset = get_image_c2w(jsonData, datasetPath);
-
-	GetImages imgs;
-
-	auto img = imgs.load_image("../tinynerfdata/lego/train/r_0.png");
+	train();
 
 	// if (!(__CUDACC_VER_MAJOR__ > 10 || (__CUDACC_VER_MAJOR__ == 10 && __CUDACC_VER_MINOR__ >= 2)))
 	// {

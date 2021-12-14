@@ -37,7 +37,7 @@ endif()
 
 find_package(xtensor REQUIRED)
 
-add_executable(mlp_tinynerf mlp_tinynerf.cu data.cpp data.h lodepng.cpp lodepng.h)
+add_executable(mlp_tinynerf mlp_tinynerf.cu data.cpp data.h lodepng.cpp lodepng.h utils.cpp utils.h)
 target_include_directories(mlp_tinynerf PUBLIC ${xtensor_INCLUDE_DIRS})
 target_link_libraries(mlp_tinynerf PUBLIC ${CUDA_LIBRARIES} tiny-cuda-nn xtensor PRIVATE nlohmann_json::nlohmann_json)
 target_compile_options(mlp_tinynerf PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:${CUDA_NVCC_FLAGS}>)

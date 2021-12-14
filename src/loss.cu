@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020-2021, NVIDIA CORPORATION.  All rights reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
  *     * Redistributions of source code must retain the above copyright notice, this list of
@@ -11,7 +11,7 @@
  *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
  *       to endorse or promote products derived from this software without specific prior written
  *       permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
  * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
  * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
@@ -20,7 +20,8 @@
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
  * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *//*
+ */
+/*
  */
 
 /** @file   loss.cu
@@ -38,36 +39,58 @@
 #include <tiny-cuda-nn/losses/relative_l2.h>
 #include <tiny-cuda-nn/losses/relative_l2_luminance.h>
 #include <tiny-cuda-nn/losses/cross_entropy.h>
-
+#include <tiny-cuda-nn/losses/photometric.h>
 
 TCNN_NAMESPACE_BEGIN
 
 template <typename T>
-Loss<T>* create_loss(const json& loss) {
+Loss<T> *create_loss(const json &loss)
+{
 	std::string loss_type = loss.value("otype", "RelativeL2");
 
-	if (equals_case_insensitive(loss_type, "L2")) {
+	if (equals_case_insensitive(loss_type, "L2"))
+	{
 		return new L2Loss<T>{};
-	} else if (equals_case_insensitive(loss_type, "RelativeL2")) {
+	}
+	else if (equals_case_insensitive(loss_type, "RelativeL2"))
+	{
 		return new RelativeL2Loss<T>{};
-	} else if (equals_case_insensitive(loss_type, "RelativeL2Luminance")) {
+	}
+	else if (equals_case_insensitive(loss_type, "RelativeL2Luminance"))
+	{
 		return new RelativeL2LuminanceLoss<T>{};
-	} else if (equals_case_insensitive(loss_type, "L1")) {
+	}
+	else if (equals_case_insensitive(loss_type, "L1"))
+	{
 		return new L1Loss<T>{};
-	} else if (equals_case_insensitive(loss_type, "RelativeL1")) {
+	}
+	else if (equals_case_insensitive(loss_type, "RelativeL1"))
+	{
 		return new RelativeL1Loss<T>{};
-	} else if (equals_case_insensitive(loss_type, "Mape")) {
+	}
+	else if (equals_case_insensitive(loss_type, "Mape"))
+	{
 		return new MapeLoss<T>{};
-	} else if (equals_case_insensitive(loss_type, "Smape")) {
+	}
+	else if (equals_case_insensitive(loss_type, "Smape"))
+	{
 		return new SmapeLoss<T>{};
-	} else if (equals_case_insensitive(loss_type, "CrossEntropy")) {
+	}
+	else if (equals_case_insensitive(loss_type, "CrossEntropy"))
+	{
 		return new CrossEntropyLoss<T>{};
-	} else {
+	}
+	else if (equals_case_insensitive(loss_type, "Photometric"))
+	{
+		return new PhotometricLoss<T>{};
+	}
+	else
+	{
 		throw std::runtime_error{std::string{"Invalid loss type: "} + loss_type};
 	}
 }
 
-template Loss<float>* create_loss(const json& loss);
-template Loss<__half>* create_loss(const json& loss);
+template Loss<float> *create_loss(const json &loss);
+template Loss<__half> *create_loss(const json &loss);
 
 TCNN_NAMESPACE_END
