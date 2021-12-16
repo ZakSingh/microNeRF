@@ -281,6 +281,7 @@ int main(int argc, char *argv[])
 			// TODO: Generate training batches
 			// Compute reference values at random coordinates
 			{
+				// Random values b/w 0 and 1 placed into training batch
 				generate_random_uniform<float>(training_stream, rng, batch_size * n_input_dims, training_batch.data());
 				linear_kernel(eval_image<n_output_dims>, 0, training_stream, batch_size, texture, training_batch.data(), training_target.data());
 			}
