@@ -36,10 +36,12 @@ int main(int argc, char *argv[])
   const uint8_t n_samples = 64;
   const float near = 2.;
   const float far = 6.;
-
-  const uint32_t n_input_dims = 4;  // 3 + 3 * 2 * n_frequencies;
+  // TinyNeRF only uses (xyz) -- no direction
+  const uint32_t n_input_dims = 3;
   const uint32_t n_output_dims = 4; // RGB + density
-  const uint32_t batch_size = 1 << 16;
+
+  // Number of (x, y, z) coordinates to compute
+  uint32_t n_coords = image_width * image_height * n_samples;
 
   try
   {
@@ -51,7 +53,6 @@ int main(int argc, char *argv[])
                           {"beta1", 0.9f},
                           {"beta2", 0.99f},
                       }},
-        // {"encoding", {{"otype", "Identity"}, {"scale", 1.0}, {"offset", 0.0}}},
         {"encoding", {
                          {"otype", "Frequency"},
                          {"n_frequencies", n_frequencies},
@@ -74,11 +75,6 @@ int main(int argc, char *argv[])
     std::shared_ptr<Optimizer<precision_t>> optimizer{create_optimizer<precision_t>(optimizer_opts)};
     std::shared_ptr<NetworkWithInputEncoding<precision_t>> network = std::make_shared<NetworkWithInputEncoding<precision_t>>(n_input_dims, n_output_dims, encoding_opts, network_opts);
 
-    cudaStream_t inference_stream;
-    CUDA_CHECK_THROW(cudaStreamCreate(&inference_stream));
-
-    GPUMatrix<float> prediction(n_output_dims, image_width * image_height);
-
     auto trainer = std::make_shared<Trainer<float, precision_t, precision_t>>(network, optimizer, loss);
 
     // 0. Load precomputed network weights
@@ -87,7 +83,7 @@ int main(int argc, char *argv[])
 
     for (auto &p : network->layer_sizes())
     {
-      std::cout << p.first << ", " << p.second << std::endl;
+      std::cout << p.second << ", " << p.first << std::endl;
     }
     trainer->set_params_full_precision(weights.data(), weights.size());
 
@@ -95,24 +91,38 @@ int main(int argc, char *argv[])
 
     json transform_data = read_json("../nerfdata/tinylego/transforms.json");
     string dataset_path = "../nerfdata/tinylego";
+    // In TinyNeRF dataset, camer_angle_x is the focal length (no need to calculate)
     float focal_length = transform_data["camera_angle_x"];
 
     auto [image_paths, c2ws] = get_image_c2w(transform_data, dataset_path);
 
     auto pose = c2ws[0];
-    auto [ray_origins, ray_directions] = get_ray_bundle(100, 100, focal_length, pose);
+    auto [ray_origins, ray_directions] = get_ray_bundle(image_width, image_height, focal_length, pose);
     auto [query_pts, depth_values] = compute_query_points_from_rays(ray_origins, ray_directions, near, far, n_samples);
     auto pts_flat = flatten_query_pts(query_pts);
-    std::vector<float> pts_vec(pts_flat.begin(), pts_flat.end());
-    GPUMatrix<float> inference_batch(pts_vec.data(), n_input_dims, 1024);
+    std::vector<float> host_pts_vec(pts_flat.begin(), pts_flat.end());
+    GPUMemory<float> pts_vec(host_pts_vec.size());
+    pts_vec.copy_from_host(host_pts_vec);
 
-    // // 2. Run inference
+    std::cout << "Total number of (x, y, z) points for inference: " << host_pts_vec.size() / n_input_dims << std::endl;
+
+    cudaStream_t inference_stream;
+    CUDA_CHECK_THROW(cudaStreamCreate(&inference_stream));
+    GPUMatrix<float> inference_batch(pts_vec.data(), n_input_dims, n_coords);
+    GPUMatrix<float> prediction(n_output_dims, n_coords);
+
+    // 2. Run inference
     network->inference(inference_stream, inference_batch, prediction);
+    // Need to move prediction matrix from GPU to CPU
+    std::vector<float> host_output(n_coords * n_output_dims);
+    CUDA_CHECK_THROW(cudaMemcpy(host_output.data(), prediction.data(), host_output.size() * sizeof(float), cudaMemcpyDeviceToHost));
+    std::cout << "output number of elements: " << host_output.size() << std::endl;
 
-    // // 3. Volume rendering
-    // auto radiance_field = xt::adapt(prediction);
-    // auto rgb = render_rays(radiance_field, ray_origins, depth_values);
-    // std::cout << rgb << std::endl;
+    // 3. Volume rendering
+    auto radiance_field = xt::adapt(host_output, {100, 100, 64, 4});
+    std::cout << xt::adapt(radiance_field.shape()) << std::endl;
+    auto rgb = render_rays(radiance_field, ray_origins, depth_values);
+    std::cout << rgb << std::endl;
   }
   catch (std::exception &e)
   {
@@ -121,10 +131,3 @@ int main(int argc, char *argv[])
 
   return EXIT_SUCCESS;
 }
-
-// 1. Get TinyNERF to output weights in the exact format needed
-// 2. Run the code here and debug as needed
-
-// 30,720
-// 16,384
-// 1,024

@@ -28,8 +28,8 @@ PROJECT(tiny-cuda-nn
 	LANGUAGES CXX CUDA
 )
 
-option(TCNN_BUILD_BENCHMARK "Build tiny-cuda-nn example benchmark?" ON)
-option(TCNN_BUILD_EXAMPLES "Build tiny-cuda-nn example applications?" ON)
+option(TCNN_BUILD_BENCHMARK "Build tiny-cuda-nn example benchmark?" OFF)
+option(TCNN_BUILD_EXAMPLES "Build tiny-cuda-nn example applications?" OFF)
 
 ###############################################################################
 # Build type and C++ compiler setup
@@ -121,10 +121,10 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL ${CMAKE_BINARY_DIR})
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR})
 
 add_subdirectory("src")
+add_subdirectory("tinynerf")
 
 if (TCNN_BUILD_EXAMPLES)
 	add_subdirectory("samples")
-	add_subdirectory("tinynerf")
 endif()
 if (TCNN_BUILD_BENCHMARK)
 	add_subdirectory("benchmarks/image")
