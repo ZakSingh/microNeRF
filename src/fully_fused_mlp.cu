@@ -801,7 +801,6 @@ void FullyFusedMLP<T, WIDTH>::inference_mixed_precision(cudaStream_t stream, con
 
 	// Make sure our temporary buffers have the correct size for the given batch size
 	uint32_t batch_size = input.n();
-	std::cout << "batch_size" << batch_size << std::endl;
 	if (m_inference_tmp.n() != batch_size)
 	{
 		allocate_inference_buffers(batch_size);

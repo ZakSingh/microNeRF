@@ -69,6 +69,11 @@ pair<pair<int, int>, vector<uint8_t>> decodePNG(string filename)
   return {dimensions, image};
 }
 
+void encodePNG(string filename, float *values)
+{
+  // lodepng::encode_file(&filename, )
+}
+
 json read_json(string path)
 {
   std::ifstream f{path};

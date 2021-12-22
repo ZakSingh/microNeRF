@@ -18,6 +18,7 @@
 #include <xtensor/xstrided_view.hpp>
 #include <xtensor/xnorm.hpp>
 #include <xtensor/xrandom.hpp>
+#include <xtensor/xnpy.hpp>
 
 using nlohmann::json;
 using std::pair;
@@ -101,30 +102,38 @@ compute_query_points_from_rays(xt::xtensor<float, 3, xt::layout_type::row_major>
  * @return 3D tensor of RGB values for each pixel
  */
 xt::xtensor<float, 3, xt::layout_type::row_major>
-render_rays(xt::xtensor<float, 3, xt::layout_type::row_major> &radiance_field, xt::xtensor<float, 3, xt::layout_type::row_major> &ray_origins, xt::xtensor<float, 1, xt::layout_type::row_major> &depth_values)
+render_rays(xt::xtensor<float, 4> radiance_field, xt::xtensor<float, 1, xt::layout_type::row_major> depth_values)
 {
+  std::cout << "render_rays" << std::endl;
   auto densities_raw = xt::strided_view(radiance_field, {xt::ellipsis(), 3});
+  // std::cout << densities_raw << std::endl;
   // Calculate ReLU of each density
   auto sigma_a = xt::fmax(densities_raw, xt::zeros_like(densities_raw));
+  // std::cout << sigma_a << std::endl;
 
   auto rgb_raw = xt::strided_view(radiance_field, {xt::ellipsis(), xt::range(_, 3)});
+  // std::cout << rgb_raw << std::endl;
+
   // Calculate sigmoid of each raw rgb output to get 0-1 val for rendering
-  auto rgb = 1. / (1. + xt::exp(rgb_raw));
+  auto rgb = 1. / (1. + xt::exp(-rgb_raw));
+  // std::cout << rgb << std::endl;
 
   auto dists = xt::hstack(xtuple(
       xt::strided_view(depth_values, {xt::ellipsis(), xt::range(1, _)}) - xt::strided_view(depth_values, {xt::ellipsis(), xt::range(_, -1)}),
       xt::broadcast(xt::xarray<float>({1e10}), xt::strided_view(depth_values, {xt::ellipsis(), xt::range(_, 1)}).shape())));
 
+  // std::cout << dists << std::endl;
+
   auto alpha = 1. - xt::exp(-sigma_a * dists);
+  // std::cout << alpha << std::endl;
 
   // Replicate 'exclusive cumprod' behaviour from tensorflow
   auto cumprod = xt::cumprod(1. - alpha + 1e-10, -1);
-  cumprod = xt::roll(cumprod, 1, -1);
+  cumprod = xt::roll(cumprod, 1, 2);
   xt::strided_view(cumprod, {xt::ellipsis(), 0}) = 1;
   auto weights = alpha * cumprod;
-
   auto rgb_map = xt::sum(xt::strided_view(weights, {xt::ellipsis(), xt::newaxis()}) * rgb, -2);
-
+  xt::dump_npy("rgbmap.npy", rgb_map);
   return rgb_map;
 }
 
@@ -134,4 +143,17 @@ xt::xtensor<float, 2> flatten_query_pts(xt::xtensor<float, 4> &query_pts)
   int l = pts_shape[0] * pts_shape[1] * pts_shape[2];
   auto pts_flat = xt::reshape_view(query_pts, {l, 3});
   return pts_flat;
+}
+
+xt::xtensor<float, 2> pos_encode(xt::xtensor<float, 2> x)
+{
+  int L_embed = 6;
+  std::vector<xt::xtensor<float, 2>> rets;
+  for (int i = 0; i < L_embed; i++)
+  {
+    rets.push_back(xt::sin(pow(2., i) * x));
+    rets.push_back(xt::cos(pow(2., i) * x));
+  }
+  auto xrets = xt::adapt(rets);
+  return xt::concatenate(xrets, -1);
 }

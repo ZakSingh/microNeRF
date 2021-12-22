@@ -270,7 +270,6 @@ public:
 		{
 			if (m_data && m_size > 0)
 			{
-				std::cout << "GPUMemory free_memory call" << std::endl;
 				free_memory();
 				m_size = 0;
 			}
