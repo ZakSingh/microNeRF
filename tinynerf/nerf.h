@@ -137,23 +137,27 @@ render_rays(xt::xtensor<float, 4> radiance_field, xt::xtensor<float, 1, xt::layo
   return rgb_map;
 }
 
-xt::xtensor<float, 2> flatten_query_pts(xt::xtensor<float, 4> &query_pts)
-{
-  auto pts_shape = xt::adapt(query_pts.shape());
-  int l = pts_shape[0] * pts_shape[1] * pts_shape[2];
-  auto pts_flat = xt::reshape_view(query_pts, {l, 3});
-  return pts_flat;
-}
-
 xt::xtensor<float, 2> pos_encode(xt::xtensor<float, 2> x)
 {
   int L_embed = 6;
   std::vector<xt::xtensor<float, 2>> rets;
+  rets.push_back(x);
   for (int i = 0; i < L_embed; i++)
   {
     rets.push_back(xt::sin(pow(2., i) * x));
     rets.push_back(xt::cos(pow(2., i) * x));
   }
+  // Each element of rets is { 640000, 3 }. rets is 13 elements long 1 + (6 x 2)
   auto xrets = xt::adapt(rets);
-  return xt::concatenate(xrets, -1);
+  auto concat = xt::concatenate(xt::xtuple(xrets[0], xrets[1], xrets[2], xrets[3], xrets[4], xrets[5], xrets[6], xrets[7], xrets[8], xrets[9], xrets[10], xrets[11], xrets[12]), 1);
+  return concat;
+}
+
+xt::xtensor<float, 2> flatten_query_pts(xt::xtensor<float, 4> &query_pts)
+{
+  auto pts_shape = xt::adapt(query_pts.shape());
+  int l = pts_shape[0] * pts_shape[1] * pts_shape[2];
+  auto pts_flat = xt::reshape_view(query_pts, {l, 3});
+  auto encoded_pts = pos_encode(pts_flat);
+  return encoded_pts;
 }

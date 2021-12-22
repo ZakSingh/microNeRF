@@ -46,8 +46,6 @@ void render_output(const T *output, int n_coords, int image_height, int image_wi
 
   std::vector<std::size_t> rf_shape = {(size_t)image_height, (size_t)image_width, (size_t)n_samples, (size_t)n_output_dims};
   auto radiance_field = xt::adapt(float_host_data, rf_shape);
-  std::cout << radiance_field << std::endl;
-  xt::dump_npy("tn_radfield.npy", radiance_field);
   auto rgb = render_rays(radiance_field, depth_values);
 }
 
@@ -73,7 +71,7 @@ int main(int argc, char *argv[])
   const float near = 2.;
   const float far = 6.;
   // TinyNeRF only uses (xyz) -- no direction
-  const uint32_t n_input_dims = 3;
+  const uint32_t n_input_dims = 39;
   const uint32_t n_output_dims = 4; // RGB + density
 
   // Number of (x, y, z) coordinates to compute
@@ -90,8 +88,7 @@ int main(int argc, char *argv[])
                         {"beta2", 0.99f},
                     }},
       {"encoding", {
-                       {"otype", "Frequency"},
-                       {"n_frequencies", n_frequencies},
+                       {"otype", "Identity"},
                    }},
       {"network", {
                       {"otype", "FullyFusedMLP"},
@@ -130,14 +127,12 @@ int main(int argc, char *argv[])
   // In TinyNeRF dataset, camer_angle_x is the focal length (no need to calculate)
   float focal_length = transform_data["camera_angle_x"];
   auto [image_paths, c2ws] = get_image_c2w(transform_data, dataset_path);
-  auto pose = c2ws[101];
+  auto pose = c2ws[20];
 
   auto [ray_origins, ray_directions] = get_ray_bundle(image_width, image_height, focal_length, pose);
   auto [query_pts, depth_values] = compute_query_points_from_rays(ray_origins, ray_directions, near, far, n_samples);
 
   auto pts_flat = flatten_query_pts(query_pts);
-  xt::dump_npy("tn_pts_flat.npy", pts_flat);
-  std::cout << xt::adapt(pts_flat.shape()) << std::endl;
   std::vector<float> host_pts_vec(pts_flat.begin(), pts_flat.end());
   GPUMemory<float> pts_vec(host_pts_vec.size());
   pts_vec.copy_from_host(host_pts_vec);
