@@ -69,9 +69,11 @@ pair<pair<int, int>, vector<uint8_t>> decodePNG(string filename)
   return {dimensions, image};
 }
 
-void encodePNG(string filename, float *values)
+void encodePNG(string filename, const unsigned char *image, int width, int height)
 {
-  // lodepng::encode_file(&filename, )
+  unsigned error = lodepng_encode24_file(filename.data(), image, (unsigned)width, (unsigned)height);
+  if (error)
+    std::cout << "encoder error " << error << ": " << lodepng_error_text(error) << std::endl;
 }
 
 json read_json(string path)

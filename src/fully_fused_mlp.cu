@@ -829,6 +829,9 @@ void FullyFusedMLP<T, WIDTH>::inference_mixed_precision(cudaStream_t stream, con
 	case Activation::Softplus:
 		mlp_fused_forward<WIDTH, T, Activation::Softplus, true>(stream, m_output_activation, input_weight_matrix(weight_usage), input, m_inference_tmp, &output, m_n_hidden_matmuls);
 		break;
+	case Activation::Sine:
+		mlp_fused_forward<WIDTH, T, Activation::Sine, true>(stream, m_output_activation, input_weight_matrix(weight_usage), input, m_inference_tmp, &output, m_n_hidden_matmuls);
+		break;
 	default:
 		throw std::runtime_error{"Unsupported activation."};
 	}

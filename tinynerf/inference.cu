@@ -33,7 +33,7 @@ std::ostream &operator<<(std::ostream &o, tcnn::MatrixLayout c)
 }
 
 template <typename T>
-void render_output(const T *output, int n_coords, int image_height, int image_width, int n_samples, int n_output_dims, xt::xtensor<float, 1UL, xt::layout_type::row_major> depth_values)
+void render_output(const T *output, int n_coords, int image_height, int image_width, int n_samples, int n_output_dims, xt::xtensor<float, 1UL, xt::layout_type::row_major> &depth_values)
 {
   std::vector<T> host_data(n_coords * n_output_dims);
   CUDA_CHECK_THROW(cudaMemcpy(host_data.data(), output, host_data.size() * sizeof(T), cudaMemcpyDeviceToHost));
@@ -45,19 +45,16 @@ void render_output(const T *output, int n_coords, int image_height, int image_wi
   }
 
   std::vector<std::size_t> rf_shape = {(size_t)image_height, (size_t)image_width, (size_t)n_samples, (size_t)n_output_dims};
-  auto radiance_field = xt::adapt(float_host_data, rf_shape);
+  xt::xtensor<float, 4> radiance_field = xt::adapt(float_host_data, rf_shape);
   auto rgb = render_rays(radiance_field, depth_values);
+
+  // auto rgb_8bit = xt::cast<char>(rgb * 255.999);
+  // const std::vector<unsigned char> rgb_vec(rgb_8bit.begin(), rgb_8bit.end());
+  // encodePNG("output.png", rgb_vec.data(), image_width, image_height);
 }
 
 int main(int argc, char *argv[])
 {
-
-  // auto n_radiance_field = xt::load_npy<float>("../nerfdata/tinylego/n_rf.npy");
-  // auto n_ray_origins = xt::load_npy<float>("../nerfdata/tinylego/n_rayso.npy");
-  // auto n_depth_values = xt::load_npy<float>("../nerfdata/tinylego/n_dv.npy");
-  // auto rgb = render_rays(n_radiance_field, n_ray_origins, n_depth_values);
-  // return EXIT_SUCCESS;
-
   // 0. Load precomputed weights into network
   // 1. Load a known pose
   // 2. Run inference with the pose
@@ -77,8 +74,6 @@ int main(int argc, char *argv[])
   // Number of (x, y, z) coordinates to compute
   uint32_t n_coords = image_width * image_height * n_samples;
 
-  // try
-  // {
   json config = {
       {"loss", {{"otype", "L2"}}},
       {"optimizer", {
@@ -112,22 +107,18 @@ int main(int argc, char *argv[])
 
   // 0. Load precomputed network weights
   vector<float> weights = load_weights("../nerfdata/tinylego/weights.txt");
-  // std::cout << "weights: " << weights.size() << std::endl;
 
-  // for (auto &p : network->layer_sizes())
-  // {
-  //   std::cout << p.second << ", " << p.first << std::endl;
-  // }
   trainer->set_params_full_precision(weights.data(), weights.size());
 
   // 1. Load a known pose
 
   json transform_data = read_json("../nerfdata/tinylego/transforms.json");
   string dataset_path = "../nerfdata/tinylego";
+
   // In TinyNeRF dataset, camer_angle_x is the focal length (no need to calculate)
   float focal_length = transform_data["camera_angle_x"];
   auto [image_paths, c2ws] = get_image_c2w(transform_data, dataset_path);
-  auto pose = c2ws[20];
+  auto pose = c2ws[101];
 
   auto [ray_origins, ray_directions] = get_ray_bundle(image_width, image_height, focal_length, pose);
   auto [query_pts, depth_values] = compute_query_points_from_rays(ray_origins, ray_directions, near, far, n_samples);
@@ -137,7 +128,6 @@ int main(int argc, char *argv[])
   GPUMemory<float> pts_vec(host_pts_vec.size());
   pts_vec.copy_from_host(host_pts_vec);
   std::cout << "Total number of (x, y, z) points for inference: " << host_pts_vec.size() / n_input_dims << std::endl;
-
   cudaStream_t inference_stream;
   CUDA_CHECK_THROW(cudaStreamCreate(&inference_stream));
 
@@ -145,16 +135,55 @@ int main(int argc, char *argv[])
   GPUMatrix<float> inference_batch(pts_vec.data(), n_input_dims, n_coords);
   GPUMatrix<float> prediction(n_output_dims, n_coords);
 
-  // 2. Run inference
-  network->inference(inference_stream, inference_batch, prediction);
+  std::cout << "Beginning inference benchmark..." << std::endl;
+  std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 
-  render_output(prediction.data(),
-                n_coords,
-                image_height,
-                image_width,
-                n_samples,
-                n_output_dims,
-                depth_values);
+  // Inference benchmark
+  int n_iterations = 100;
+  double mean_inference_throughput = 0;
+  int mean_counter = 0;
+  int print_interval = n_iterations / 10;
+  int n_iterations_warmup = n_iterations / 2;
+
+  for (uint32_t i = 0; i < n_iterations; ++i)
+  {
+    bool print_loss = i % print_interval == 0;
+
+    // 2. Run inference
+    network->inference(inference_stream, inference_batch, prediction);
+    // std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+    // auto microseconds = std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count();
+    // std::cout << "Inference time=" << microseconds << "µs" << std::endl;
+    render_output(prediction.data(),
+                  n_coords,
+                  image_height,
+                  image_width,
+                  n_samples,
+                  n_output_dims,
+                  depth_values);
+
+    // Debug outputs
+    if (print_loss)
+    {
+      cudaDeviceSynchronize();
+      std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+      auto microseconds = std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count();
+      double throughput = print_interval * n_coords / ((double)microseconds / 1000000.0);
+      std::cout << "Iteration#" << i << ": "
+                << "time=" << microseconds << "[µs] thp=" << throughput << "/s" << std::endl;
+
+      begin = end;
+
+      if (i >= n_iterations_warmup)
+      {
+        mean_inference_throughput += throughput;
+        ++mean_counter;
+      }
+    }
+  }
+
+  mean_inference_throughput /= (double)mean_counter;
+  std::cout << "Finished inference benchmark. Mean throughput is " << mean_inference_throughput << "/s." << std::endl;
 
   return EXIT_SUCCESS;
 }

@@ -102,30 +102,22 @@ compute_query_points_from_rays(xt::xtensor<float, 3, xt::layout_type::row_major>
  * @return 3D tensor of RGB values for each pixel
  */
 xt::xtensor<float, 3, xt::layout_type::row_major>
-render_rays(xt::xtensor<float, 4> radiance_field, xt::xtensor<float, 1, xt::layout_type::row_major> depth_values)
+render_rays(xt::xtensor<float, 4> &radiance_field, xt::xtensor<float, 1, xt::layout_type::row_major> &depth_values)
 {
-  std::cout << "render_rays" << std::endl;
   auto densities_raw = xt::strided_view(radiance_field, {xt::ellipsis(), 3});
-  // std::cout << densities_raw << std::endl;
   // Calculate ReLU of each density
   auto sigma_a = xt::fmax(densities_raw, xt::zeros_like(densities_raw));
-  // std::cout << sigma_a << std::endl;
 
   auto rgb_raw = xt::strided_view(radiance_field, {xt::ellipsis(), xt::range(_, 3)});
-  // std::cout << rgb_raw << std::endl;
 
   // Calculate sigmoid of each raw rgb output to get 0-1 val for rendering
   auto rgb = 1. / (1. + xt::exp(-rgb_raw));
-  // std::cout << rgb << std::endl;
 
   auto dists = xt::hstack(xtuple(
       xt::strided_view(depth_values, {xt::ellipsis(), xt::range(1, _)}) - xt::strided_view(depth_values, {xt::ellipsis(), xt::range(_, -1)}),
       xt::broadcast(xt::xarray<float>({1e10}), xt::strided_view(depth_values, {xt::ellipsis(), xt::range(_, 1)}).shape())));
 
-  // std::cout << dists << std::endl;
-
   auto alpha = 1. - xt::exp(-sigma_a * dists);
-  // std::cout << alpha << std::endl;
 
   // Replicate 'exclusive cumprod' behaviour from tensorflow
   auto cumprod = xt::cumprod(1. - alpha + 1e-10, -1);
@@ -133,7 +125,6 @@ render_rays(xt::xtensor<float, 4> radiance_field, xt::xtensor<float, 1, xt::layo
   xt::strided_view(cumprod, {xt::ellipsis(), 0}) = 1;
   auto weights = alpha * cumprod;
   auto rgb_map = xt::sum(xt::strided_view(weights, {xt::ellipsis(), xt::newaxis()}) * rgb, -2);
-  xt::dump_npy("rgbmap.npy", rgb_map);
   return rgb_map;
 }
 
